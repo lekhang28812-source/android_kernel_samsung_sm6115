@@ -33,33 +33,39 @@ jobs:
       - name: Apply Manual Hooks for 4.19
         run: |
           python3 -c '
-          def patch(path, target, insert):
+          def patch_before(path, target, insert):
               with open(path, "r") as f: c = f.read()
               if insert.strip() not in c:
                   c = c.replace(target, insert + "\n" + target, 1)
                   with open(path, "w") as f: f.write(c)
 
-          patch("fs/exec.c", "return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);",
-                "#ifdef CONFIG_KSU\n\textern bool ksu_execveat_hook __read_mostly;\n\textern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n\textern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n\tif (unlikely(ksu_execveat_hook))\n\t\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n\telse\n\t\tksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n#endif")
+          def patch_after(path, target, insert):
+              with open(path, "r") as f: c = f.read()
+              if insert.strip() not in c:
+                  c = c.replace(target, target + "\n" + insert, 1)
+                  with open(path, "w") as f: f.write(c)
 
-          patch("fs/open.c", "long do_faccessat(int dfd, const char __user *filename, int mode)",
+          patch_before("fs/exec.c", "return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);",
+                "#ifdef CONFIG_KSU\n\t{\n\t\textern bool ksu_execveat_hook __read_mostly;\n\t\textern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n\t\textern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n\t\tif (unlikely(ksu_execveat_hook))\n\t\t\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n\t\telse\n\t\t\tksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n\t}\n#endif")
+
+          patch_before("fs/open.c", "long do_faccessat(int dfd, const char __user *filename, int mode)",
                 "#ifdef CONFIG_KSU\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *flags);\n#endif")
-          patch("fs/open.c", "if (mode & ~S_IRWXO)",
+          patch_before("fs/open.c", "if (mode & ~S_IRWXO)",
                 "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif")
 
-          patch("fs/read_write.c", "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)",
+          patch_before("fs/read_write.c", "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)",
                 "#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr, size_t *count_ptr, loff_t **pos);\n#endif")
-          patch("fs/read_write.c", "if (!(file->f_mode & FMODE_READ))",
+          patch_before("fs/read_write.c", "if (!(file->f_mode & FMODE_READ))",
                 "#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n#endif")
 
-          patch("fs/stat.c", "int vfs_statx(int dfd, const char __user *filename, int flags,",
+          patch_before("fs/stat.c", "int vfs_statx(int dfd, const char __user *filename, int flags,",
                 "#ifdef CONFIG_KSU\nextern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n#endif")
-          patch("fs/stat.c", "if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |",
+          patch_before("fs/stat.c", "if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |",
                 "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flags);\n#endif")
 
-          patch("drivers/input/input.c", "static void input_handle_event(struct input_dev *dev,",
+          patch_before("drivers/input/input.c", "static void input_handle_event(struct input_dev *dev,",
                 "#ifdef CONFIG_KSU\nextern bool ksu_input_hook __read_mostly;\nextern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);\n#endif")
-          patch("drivers/input/input.c", "int disposition = input_get_disposition(dev, type, code, &value);",
+          patch_after("drivers/input/input.c", "int disposition = input_get_disposition(dev, type, code, &value);",
                 "#ifdef CONFIG_KSU\n\tif (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(&type, &code, &value);\n#endif")
           '
 
