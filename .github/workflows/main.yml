@@ -63,21 +63,17 @@ jobs:
                 "#ifdef CONFIG_KSU\n\tif (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(&type, &code, &value);\n#endif")
           '
 
-      - name: Configure Defconfig (Builtin KSU, No Kprobes)
-        run: |
-          DEFCONFIG="arch/arm64/configs/vendor/gta4l_eur_open_defconfig"
-          sed -i '/KPROBES/d' $DEFCONFIG
-          echo "CONFIG_KSU=y" >> $DEFCONFIG
-          echo "CONFIG_KSU_MANUAL_SU=y" >> $DEFCONFIG
-          echo "# CONFIG_KPROBES is not set" >> $DEFCONFIG
-          echo "# CONFIG_KPROBE_EVENTS is not set" >> $DEFCONFIG
-
       - name: Build Kernel
         run: |
           export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
-          make O=out ARCH=arm64 vendor/gta4l_eur_open_defconfig
+          DEFCONFIG_PATH=$(find arch/arm64/configs -name "*gta4l*defconfig" ! -name "*wifi*" | head -n 1)
+          DEFCONFIG_NAME=${DEFCONFIG_PATH#arch/arm64/configs/}
+          echo "Using defconfig: $DEFCONFIG_NAME"
+          make O=out ARCH=arm64 $DEFCONFIG_NAME
+          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS
+          make O=out ARCH=arm64 olddefconfig
           make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
       - name: Package AnyKernel3
