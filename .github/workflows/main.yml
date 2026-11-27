@@ -30,6 +30,7 @@ jobs:
           RAW="https://raw.""githubusercontent.com"
           curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s main
           sed -i 's/compat_uptr_t\s*filter;/u32 filter;/g' include/linux/filter.h
+          sed -i '1i extern int intr_sync(void *);' kernel/power/suspend.c
 
       - name: Enable KSU & Kprobes in Defconfig
         run: |
@@ -49,7 +50,7 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           make O=out ARCH=arm64 vendor/gta4l_eur_open_defconfig
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-error -Wno-implicit-function-declaration"
 
       - name: Package AnyKernel3
         run: |
