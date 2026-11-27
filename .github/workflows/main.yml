@@ -11,7 +11,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: lineage-24.0
-          depth: 1
+          fetch-depth: 1
 
       - name: Install Dependencies
         run: |
@@ -25,10 +25,11 @@ jobs:
           git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
           git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
 
-      - name: Setup SukiSU-Nova
+      - name: Setup SukiSU-Nova & Fix 4.19 Headers
         run: |
           RAW="https://raw.""githubusercontent.com"
           curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s main
+          sed -i '1i #include <linux/compat.h>' include/linux/filter.h
 
       - name: Enable KSU & Kprobes in Defconfig
         run: |
