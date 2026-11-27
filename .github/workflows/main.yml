@@ -68,10 +68,9 @@ jobs:
           export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
-          DEFCONFIG_PATH=$(find arch/arm64/configs -name "*gta4l*defconfig" ! -name "*wifi*" | head -n 1)
-          DEFCONFIG_NAME=${DEFCONFIG_PATH#arch/arm64/configs/}
-          echo "Using defconfig: $DEFCONFIG_NAME"
-          make O=out ARCH=arm64 $DEFCONFIG_NAME
+          EXTRA_CFG=""
+          [ -f "arch/arm64/configs/vendor/gta4l.config" ] && EXTRA_CFG="vendor/gta4l.config"
+          make O=out ARCH=arm64 vendor/bengal-perf_defconfig vendor/gta4l-common.config $EXTRA_CFG
           ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS
           make O=out ARCH=arm64 olddefconfig
           make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
