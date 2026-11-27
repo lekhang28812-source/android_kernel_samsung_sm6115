@@ -79,18 +79,16 @@ jobs:
           EXTRA_CFG=""
           [ -f "arch/arm64/configs/vendor/gta4l.config" ] && EXTRA_CFG="vendor/gta4l.config"
           make O=out ARCH=arm64 vendor/bengal-perf_defconfig vendor/gta4l-common.config $EXTRA_CFG
-          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KSU_SUSFS -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS
+          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KSU_SUSFS -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS -d CONFIG_BUILD_ARM64_DT_OVERLAY
           make O=out ARCH=arm64 olddefconfig
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-macro-redefined -Wno-unused-variable"
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-macro-redefined -Wno-unused-variable" Image.gz
 
       - name: Package AnyKernel3
         run: |
           GH="https://github.com"
           git clone --depth=1 $GH/osm0sis/AnyKernel3.git
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
-          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ || cp out/arch/arm64/boot/Image AnyKernel3/
-          find out/arch/arm64/boot/dts -name "*.dtb" -exec cat {} + > AnyKernel3/dtb || true
-          find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp {} AnyKernel3/dtbo.img \; || true
+          cp out/arch/arm64/boot/Image.gz AnyKernel3/
           cd AnyKernel3 && zip -r9 ../SukiSU-Nova-T505.zip * -x .git README.md *placeholder
 
       - name: Upload Artifact
