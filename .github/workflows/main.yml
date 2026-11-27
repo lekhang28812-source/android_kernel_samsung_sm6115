@@ -1,0 +1,67 @@
+name: Build SukiSU-Nova SM-T505
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          ref: lineage-24.0
+          depth: 1
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex git libssl-dev libelf-dev python3 zip wget
+
+      - name: Setup Toolchain (Clang & GCC)
+        run: |
+          GH="https://github.com"
+          git clone --depth=1 $GH/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git clang
+          git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
+          git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
+
+      - name: Setup SukiSU-Nova
+        run: |
+          RAW="https://raw.""githubusercontent.com"
+          curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s main
+
+      - name: Enable KSU & Kprobes in Defconfig
+        run: |
+          DEFCONFIG="arch/arm64/configs/vendor/gta4l_eur_open_defconfig"
+          echo "CONFIG_KSU=y" >> $DEFCONFIG
+          echo "CONFIG_KSU_MANUAL_SU=y" >> $DEFCONFIG
+          echo "CONFIG_KPROBES=y" >> $DEFCONFIG
+          echo "CONFIG_HAVE_KPROBES=y" >> $DEFCONFIG
+          echo "CONFIG_KPROBE_EVENTS=y" >> $DEFCONFIG
+          echo "CONFIG_KPM=y" >> $DEFCONFIG
+          echo "CONFIG_KALLSYMS=y" >> $DEFCONFIG
+          echo "CONFIG_KALLSYMS_ALL=y" >> $DEFCONFIG
+
+      - name: Build Kernel
+        run: |
+          export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          make O=out ARCH=arm64 vendor/gta4l_eur_open_defconfig
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+      - name: Package AnyKernel3
+        run: |
+          GH="https://github.com"
+          git clone --depth=1 $GH/osm0sis/AnyKernel3.git
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ || cp out/arch/arm64/boot/Image AnyKernel3/
+          find out/arch/arm64/boot/dts -name "*.dtb" -exec cat {} + > AnyKernel3/dtb || true
+          find out/arch/arm64/boot/dts -name "*.dtbo" -exec cp {} AnyKernel3/dtbo.img \; || true
+          cd AnyKernel3 && zip -r9 ../SukiSU-Nova-T505.zip * -x .git README.md *placeholder
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SukiSU-Nova-T505
+          path: SukiSU-Nova-T505.zip
