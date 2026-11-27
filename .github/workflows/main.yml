@@ -25,24 +25,50 @@ jobs:
           git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
           git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
 
-      - name: Setup SukiSU-Nova & Fix 4.19 Headers
+      - name: Setup SukiSU-Nova (Builtin Mode)
         run: |
           RAW="https://raw.""githubusercontent.com"
-          curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s main
-          sed -i 's/compat_uptr_t\s*filter;/u32 filter;/g' include/linux/filter.h
-          sed -i '1i extern int intr_sync(void *);' kernel/power/suspend.c
+          curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s builtin
 
-      - name: Enable KSU & Kprobes in Defconfig
+      - name: Apply Manual Hooks for 4.19
+        run: |
+          python3 -c '
+          def patch(path, target, insert):
+              with open(path, "r") as f: c = f.read()
+              if insert.strip() not in c:
+                  c = c.replace(target, insert + "\n" + target, 1)
+                  with open(path, "w") as f: f.write(c)
+
+          patch("fs/exec.c", "return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);",
+                "#ifdef CONFIG_KSU\n\textern bool ksu_execveat_hook __read_mostly;\n\textern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n\textern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n\tif (unlikely(ksu_execveat_hook))\n\t\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n\telse\n\t\tksu_handle_execveat_sucompat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n#endif")
+
+          patch("fs/open.c", "long do_faccessat(int dfd, const char __user *filename, int mode)",
+                "#ifdef CONFIG_KSU\nextern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *flags);\n#endif")
+          patch("fs/open.c", "if (mode & ~S_IRWXO)",
+                "#ifdef CONFIG_KSU\n\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n#endif")
+
+          patch("fs/read_write.c", "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)",
+                "#ifdef CONFIG_KSU\nextern bool ksu_vfs_read_hook __read_mostly;\nextern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr, size_t *count_ptr, loff_t **pos);\n#endif")
+          patch("fs/read_write.c", "if (!(file->f_mode & FMODE_READ))",
+                "#ifdef CONFIG_KSU\n\tif (unlikely(ksu_vfs_read_hook))\n\t\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n#endif")
+
+          patch("fs/stat.c", "int vfs_statx(int dfd, const char __user *filename, int flags,",
+                "#ifdef CONFIG_KSU\nextern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n#endif")
+          patch("fs/stat.c", "if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |",
+                "#ifdef CONFIG_KSU\n\tksu_handle_stat(&dfd, &filename, &flags);\n#endif")
+
+          patch("drivers/input/input.c", "static void input_handle_event(struct input_dev *dev,",
+                "#ifdef CONFIG_KSU\nextern bool ksu_input_hook __read_mostly;\nextern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);\n#endif")
+          patch("drivers/input/input.c", "int disposition = input_get_disposition(dev, type, code, &value);",
+                "#ifdef CONFIG_KSU\n\tif (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(&type, &code, &value);\n#endif")
+          '
+
+      - name: Enable KSU in Defconfig (Without Kprobes)
         run: |
           DEFCONFIG="arch/arm64/configs/vendor/gta4l_eur_open_defconfig"
           echo "CONFIG_KSU=y" >> $DEFCONFIG
           echo "CONFIG_KSU_MANUAL_SU=y" >> $DEFCONFIG
-          echo "CONFIG_KPROBES=y" >> $DEFCONFIG
-          echo "CONFIG_HAVE_KPROBES=y" >> $DEFCONFIG
-          echo "CONFIG_KPROBE_EVENTS=y" >> $DEFCONFIG
-          echo "CONFIG_KPM=y" >> $DEFCONFIG
-          echo "CONFIG_KALLSYMS=y" >> $DEFCONFIG
-          echo "CONFIG_KALLSYMS_ALL=y" >> $DEFCONFIG
+          echo "# CONFIG_KPROBES is not set" >> $DEFCONFIG
 
       - name: Build Kernel
         run: |
@@ -50,7 +76,7 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           make O=out ARCH=arm64 vendor/gta4l_eur_open_defconfig
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-error -Wno-implicit-function-declaration"
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
       - name: Package AnyKernel3
         run: |
