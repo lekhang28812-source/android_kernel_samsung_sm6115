@@ -63,12 +63,14 @@ jobs:
                 "#ifdef CONFIG_KSU\n\tif (unlikely(ksu_input_hook))\n\t\tksu_handle_input_handle_event(&type, &code, &value);\n#endif")
           '
 
-      - name: Enable KSU in Defconfig (Without Kprobes)
+      - name: Configure Defconfig (Builtin KSU, No Kprobes)
         run: |
           DEFCONFIG="arch/arm64/configs/vendor/gta4l_eur_open_defconfig"
+          sed -i '/KPROBES/d' $DEFCONFIG
           echo "CONFIG_KSU=y" >> $DEFCONFIG
           echo "CONFIG_KSU_MANUAL_SU=y" >> $DEFCONFIG
           echo "# CONFIG_KPROBES is not set" >> $DEFCONFIG
+          echo "# CONFIG_KPROBE_EVENTS is not set" >> $DEFCONFIG
 
       - name: Build Kernel
         run: |
