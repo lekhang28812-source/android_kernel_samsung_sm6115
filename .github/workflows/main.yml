@@ -78,7 +78,7 @@ jobs:
           EXTRA_CFG=""
           [ -f "arch/arm64/configs/vendor/gta4l.config" ] && EXTRA_CFG="vendor/gta4l.config"
           make O=out ARCH=arm64 vendor/bengal-perf_defconfig vendor/gta4l-common.config $EXTRA_CFG
-          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS
+          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KSU_SUSFS -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS
           make O=out ARCH=arm64 olddefconfig
           make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
