@@ -29,7 +29,7 @@ jobs:
         run: |
           RAW="https://raw.""githubusercontent.com"
           curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s main
-          sed -i '1i #include <linux/compat.h>' include/linux/filter.h
+          sed -i 's/compat_uptr_t\s*filter;/u32 filter;/g' include/linux/filter.h
 
       - name: Enable KSU & Kprobes in Defconfig
         run: |
