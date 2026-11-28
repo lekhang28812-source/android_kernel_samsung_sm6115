@@ -1,71 +1,91 @@
-# SukiSU-Nova Official 4.19+ ARM64 Workflow
-name: Build SukiSU-Nova SM-T505
+name: Build SukiSU-Nova + SUSFS (SM-T505)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          ref: lineage-24.0
           fetch-depth: 1
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex git libssl-dev libelf-dev python3 zip wget
+          sudo apt-get install -y bc bison build-essential ccache curl flex libncurses-dev libssl-dev libelf-dev python3 zip unzip wget git
 
-      - name: Setup Toolchain (Clang & GCC)
+      - name: Setup Toolchains (Clang & GCC)
         run: |
-          GH="https://github.com"
-          git clone --depth=1 $GH/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b.git clang
-          git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
-          git clone --depth=1 $GH/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
+          mkdir -p toolchains/clang toolchains/gcc64 toolchains/gcc32
+          wget -q https://googlesource.com -O clang.tar.gz
+          tar -xzf clang.tar.gz -C toolchains/clang
+          git clone --depth=1 https://googlesource.com -b android12L-release toolchains/gcc64
+          git clone --depth=1 https://googlesource.com -b android12L-release toolchains/gcc32
 
-      - name: Setup SukiSU-Nova & Fix 4.19 Compatibility
+      - name: Integrate SukiSU-Nova (builtin branch)
         run: |
-          RAW="https://raw.""githubusercontent.com"
-          curl -LSs "$RAW/SukiSU-Nova/SukiSU-Nova/main/kernel/setup.sh" | bash -s builtin
-          touch include/linux/static_call.h
-          sed -i 's/access_ok(u64_to_user_ptr(cmd.result_code)/access_ok(VERIFY_WRITE, u64_to_user_ptr(cmd.result_code)/g' KernelSU/kernel/extension/kpm/kpm.c
+          curl -LSs "https://shirkneko.top" | bash -s builtin
 
-      - name: Build Kernel & Stock Modules
+      - name: Configure Defconfig + SUSFS for SM-T505
         run: |
-          export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
+          DEFCONFIG=$(find arch/arm64/configs -name "*gta4l*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
+          echo "Using defconfig: $DEFCONFIG"
+          echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
+          cat << 'EOF' >> arch/arm64/configs/$DEFCONFIG
+          # Kích hoạt SukiSU-Nova
+          CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_SU=y
+
+          # Hook tự động cho nhân 4.19+ ARM64
+          CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y
+
+          # Kích hoạt ẩn root SUSFS tích hợp
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
+          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+
+          # Kích hoạt KPM (KernelPatch Module) & Kallsyms
+          CONFIG_KPM=y
+          CONFIG_KALLSYMS=y
+          CONFIG_KALLSYMS_ALL=y
+          EOF
+
+      - name: Build Kernel
+        run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          EXTRA_CFG=$(find arch/arm64/configs -name "gta4l.config" | sed 's|arch/arm64/configs/||')
-          make O=out ARCH=arm64 vendor/bengal-perf_defconfig vendor/gta4l-common.config $EXTRA_CFG
-          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_HACK_ARM64_BRANCH_LINK -e CONFIG_KALLSYMS -e CONFIG_KALLSYMS_ALL -d CONFIG_KSU_SUSFS -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS -d CONFIG_BUILD_ARM64_DT_OVERLAY -d CONFIG_LOCALVERSION_AUTO --set-str CONFIG_LOCALVERSION "-cip136-st20-perf-gcbd2ed85b026"
-          make O=out ARCH=arm64 olddefconfig
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-macro-redefined -Wno-unused-variable" Image.gz modules
-          make O=out ARCH=arm64 INSTALL_MOD_PATH=modules_out INSTALL_MOD_STRIP=1 modules_install
+          export PATH="$PWD/toolchains/clang/bin:$PWD/toolchains/gcc64/bin:$PWD/toolchains/gcc32/bin:$PATH"
+          make O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- $DEFCONFIG_NAME
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-error" Image.gz-dtb dtbo.img
 
-      - name: Package Kernel & KSU Driver Module
+      - name: Package AnyKernel3
         run: |
-          GH="https://github.com"
-          git clone --depth=1 $GH/osm0sis/AnyKernel3.git
-          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
-          sed -i 's|BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot|BLOCK=/dev/block/bootdevice/by-name/boot|g' AnyKernel3/anykernel.sh
-          cp out/arch/arm64/boot/Image.gz AnyKernel3/
-          cd AnyKernel3 && zip -r9 ../SukiSU-Nova-T505.zip * -x .git README.md *placeholder
-          cd ..
-          mkdir -p ksu_mod/system/vendor/lib/modules ksu_mod/vendor/lib/modules
-          find out/modules_out -name "*.ko" -exec cp {} ksu_mod/system/vendor/lib/modules/ \;
-          find out/modules_out -name "*.ko" -exec cp {} ksu_mod/vendor/lib/modules/ \;
-          printf "id=t505_stock_drivers\nname=SM-T505 Stock Kernel Drivers\nversion=1.0\nversionCode=1\nauthor=Custom\ndescription=Restore Wi-Fi, Audio, Sensors and Video modules for SM-T505\n" > ksu_mod/module.prop
-          printf "#!/system/bin/sh\nMODDIR=\${0%%/*}\nif [ -d /vendor_dlkm/lib/modules ]; then\n  mount --bind \$MODDIR/vendor/lib/modules /vendor_dlkm/lib/modules\nfi\n" > ksu_mod/post-fs-data.sh
-          chmod 755 ksu_mod/post-fs-data.sh
-          cd ksu_mod && zip -r9 ../T505-Drivers-Fix.zip *
+          git clone --depth=1 https://github.com AnyKernel3
+          cd AnyKernel3
+          sed -i 's/device.name1=.*/device.name1=gta4l/' anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=SM-T505/' anykernel.sh
+          sed -i 's|BLOCK=.*|BLOCK=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=0;/' anykernel.sh
+          cp ../out/arch/arm64/boot/Image.gz-dtb .
+          zip -r9 ../SukiSU-Nova-SUSFS-SM-T505-LOS24.zip * -x .git README.md *placeholder
 
-      - name: Upload Artifacts
+      - name: Upload Kernel Zip
         uses: actions/upload-artifact@v4
         with:
-          name: SukiSU-Nova-T505-Complete
-          path: |
-            SukiSU-Nova-T505.zip
-            T505-Drivers-Fix.zip
+          name: SukiSU-Nova-SUSFS-SM-T505-LOS24
+          path: SukiSU-Nova-SUSFS-SM-T505-LOS24.zip
