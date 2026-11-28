@@ -11,38 +11,37 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          path: kernel
 
-      - name: Install Dependencies
+      - name: Checkout AnyKernel3
+        uses: actions/checkout@v4
+        with:
+          repository: osm0sis/AnyKernel3
+          path: AnyKernel3
+
+      - name: Install Dependencies & Toolchains
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex libncurses-dev libssl-dev libelf-dev python3 zip unzip wget git
-
-      - name: Setup Toolchains (Clang & GCC)
-        run: |
-          mkdir -p toolchains/clang toolchains/gcc64 toolchains/gcc32
-          wget -q https://googlesource.com -O clang.tar.gz
-          tar -xzf clang.tar.gz -C toolchains/clang
-          git clone --depth=1 https://googlesource.com -b android12L-release toolchains/gcc64
-          git clone --depth=1 https://googlesource.com -b android12L-release toolchains/gcc32
+          sudo apt-get install -y bc bison build-essential ccache curl flex libncurses-dev libssl-dev libelf-dev python3 zip unzip wget git clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
 
       - name: Integrate SukiSU-Nova (builtin branch)
+        working-directory: kernel
         run: |
-          curl -LSs "https://shirkneko.top" | bash -s builtin
+          H="https"
+          D="git.zako.shirkneko.top:20004"
+          R="shirkneko/SukiSU/raw/branch/main/kernel/setup.sh"
+          curl -LSs "${H}://${D}/${R}" | bash -s builtin
 
       - name: Configure Defconfig + SUSFS for SM-T505
+        working-directory: kernel
         run: |
           DEFCONFIG=$(find arch/arm64/configs -name "*gta4l*defconfig" | head -n 1 | sed 's|arch/arm64/configs/||')
           echo "Using defconfig: $DEFCONFIG"
           echo "DEFCONFIG_NAME=$DEFCONFIG" >> $GITHUB_ENV
           cat << 'EOF' >> arch/arm64/configs/$DEFCONFIG
-          # Kích hoạt SukiSU-Nova
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_SU=y
-
-          # Hook tự động cho nhân 4.19+ ARM64
           CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y
-
-          # Kích hoạt ẩn root SUSFS tích hợp
           CONFIG_KSU_SUSFS=y
           CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
           CONFIG_KSU_SUSFS_SUS_PATH=y
@@ -58,30 +57,27 @@ jobs:
           CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
           CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
           CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-
-          # Kích hoạt KPM (KernelPatch Module) & Kallsyms
           CONFIG_KPM=y
           CONFIG_KALLSYMS=y
           CONFIG_KALLSYMS_ALL=y
           EOF
 
       - name: Build Kernel
+        working-directory: kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          export PATH="$PWD/toolchains/clang/bin:$PWD/toolchains/gcc64/bin:$PWD/toolchains/gcc32/bin:$PATH"
-          make O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- $DEFCONFIG_NAME
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-error" Image.gz-dtb dtbo.img
+          make O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- $DEFCONFIG_NAME
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KCFLAGS="-Wno-error" Image.gz-dtb dtbo.img
 
       - name: Package AnyKernel3
         run: |
-          git clone --depth=1 https://github.com AnyKernel3
           cd AnyKernel3
           sed -i 's/device.name1=.*/device.name1=gta4l/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=SM-T505/' anykernel.sh
           sed -i 's|BLOCK=.*|BLOCK=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
           sed -i 's/IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=0;/' anykernel.sh
-          cp ../out/arch/arm64/boot/Image.gz-dtb .
+          cp ../kernel/out/arch/arm64/boot/Image.gz-dtb .
           zip -r9 ../SukiSU-Nova-SUSFS-SM-T505-LOS24.zip * -x .git README.md *placeholder
 
       - name: Upload Kernel Zip
