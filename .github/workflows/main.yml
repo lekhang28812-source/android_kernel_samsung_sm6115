@@ -79,8 +79,7 @@ jobs:
           export SUBARCH=arm64
           EXTRA_CFG=$(find arch/arm64/configs -name "gta4l.config" | sed 's|arch/arm64/configs/||')
           make O=out ARCH=arm64 vendor/bengal-perf_defconfig vendor/gta4l-common.config $EXTRA_CFG
-          sed -i 's/=m$/=y/g' out/.config
-          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -d CONFIG_KSU_SUSFS -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS -d CONFIG_BUILD_ARM64_DT_OVERLAY -d CONFIG_MODULES -d CONFIG_LOCALVERSION_AUTO --set-str CONFIG_LOCALVERSION "-cip136-st20-perf-gcbd2ed85b026"
+          ./scripts/config --file out/.config -e CONFIG_KSU -e CONFIG_KSU_MANUAL_SU -e CONFIG_QCA_CLD_WLAN -d CONFIG_KSU_SUSFS -d CONFIG_KPROBES -d CONFIG_KPROBE_EVENTS -d CONFIG_BUILD_ARM64_DT_OVERLAY -d CONFIG_LOCALVERSION_AUTO --set-str CONFIG_LOCALVERSION "-cip136-st20-perf-gcbd2ed85b026"
           make O=out ARCH=arm64 olddefconfig
           make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi- KCFLAGS="-Wno-macro-redefined -Wno-unused-variable" Image.gz
 
